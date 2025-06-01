@@ -1,0 +1,205 @@
+package com.example.countdown.viewmodel
+
+import android.util.Log
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.example.countdown.data.CountdownRepository
+import com.example.countdown.data.CountdownState
+import com.example.countdown.utils.TimeUtils
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+
+/**
+ * ViewModel工厂类
+ */
+class CountdownViewModelFactory(private val repository: CountdownRepository) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(CountdownViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            return CountdownViewModel(repository) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
+    }
+}
+
+/**
+ * 倒计时视图模型
+ * 处理倒计时的业务逻辑
+ */
+class CountdownViewModel(private val repository: CountdownRepository) : ViewModel() {
+    private val _uiState = MutableStateFlow(CountdownUiState())
+    val uiState: StateFlow<CountdownUiState> = _uiState.asStateFlow()
+
+    private var countdownJob: Job? = null
+
+    init {
+        // 初始化时从仓库加载状态
+        viewModelScope.launch {
+            repository.countdownState.collect { state ->
+                updateUiState(state)
+            }
+        }
+    }
+
+    /**
+     * 更新UI状态
+     */
+    private fun updateUiState(state: CountdownState) {
+        val currentSeconds = (state.currentMillis / 1000).toInt()
+        val totalMillis = state.totalSeconds * 1000L
+        val progress = TimeUtils.calculateProgress(state.currentMillis, totalMillis)
+
+        _uiState.update { currentState ->
+            currentState.copy(
+                totalSeconds = state.totalSeconds,
+                currentSeconds = currentSeconds,
+                currentMillis = state.currentMillis,
+                isRunning = state.isRunning,
+                progress = progress,
+                formattedTime = TimeUtils.formatTime(currentSeconds),
+                formattedTotalTime = TimeUtils.formatTime(state.totalSeconds)
+            )
+        }
+    }
+
+    /**
+     * 开始/暂停倒计时
+     */
+    fun toggleCountdown() {
+        val currentState = repository.countdownState.value
+        if (currentState.currentMillis <= 0) return
+
+        if (currentState.isRunning) {
+            // 暂停
+            repository.updateState { state ->
+                state.copy(
+                    isRunning = false,
+                    pausedTime = state.totalSeconds * 1000L - state.currentMillis,
+                    startTime = 0L
+                )
+            }
+            countdownJob?.cancel()
+        } else {
+            // 开始
+            repository.updateState { state ->
+                state.copy(
+                    isRunning = true,
+                    startTime = 0L
+                )
+            }
+            startCountdown()
+        }
+    }
+
+    /**
+     * 开始倒计时
+     */
+    private fun startCountdown() {
+        countdownJob?.cancel()
+        countdownJob = viewModelScope.launch {
+            while (repository.countdownState.value.isRunning && 
+                   repository.countdownState.value.currentMillis > 0) {
+                val currentTime = System.currentTimeMillis()
+                val state = repository.countdownState.value
+                
+                if (state.startTime == 0L) {
+                    repository.updateState { it.copy(startTime = currentTime - it.pausedTime) }
+                    continue
+                }
+
+                val elapsed = currentTime - state.startTime
+                val remaining = state.totalSeconds * 1000L - elapsed
+
+                if (remaining <= 0) {
+                    repository.updateState { it.copy(
+                        currentMillis = 0L,
+                        isRunning = false,
+                        startTime = 0L,
+                        pausedTime = 0L
+                    )}
+                    break
+                } else {
+                    repository.updateState { it.copy(currentMillis = remaining) }
+                }
+
+                delay(50) // 每50毫秒更新一次
+            }
+        }
+    }
+
+    /**
+     * 重置倒计时
+     */
+    fun resetCountdown() {
+        countdownJob?.cancel()
+        repository.updateState { state ->
+            state.copy(
+                currentMillis = state.totalSeconds * 1000L,
+                isRunning = false,
+                startTime = 0L,
+                pausedTime = 0L
+            )
+        }
+    }
+
+    /**
+     * 设置新的总时间
+     */
+    fun setNewTotalTime(minutes: Int, seconds: Int) {
+        val newTotalSeconds = TimeUtils.toTotalSeconds(minutes, seconds)
+        if (newTotalSeconds <= 0) return
+
+        countdownJob?.cancel()
+        repository.updateState { state ->
+            state.copy(
+                totalSeconds = newTotalSeconds,
+                currentMillis = newTotalSeconds * 1000L,
+                isRunning = false,
+                startTime = 0L,
+                pausedTime = 0L
+            )
+        }
+    }
+
+    /**
+     * 将当前剩余时间设为新的最大时间
+     */
+    fun setCurrentAsMax() {
+        val state = repository.countdownState.value
+        if (!state.isRunning || state.currentMillis <= 0) return
+
+        val newMaxSeconds = (state.currentMillis / 1000).toInt()
+        repository.updateState { currentState ->
+            currentState.copy(
+                totalSeconds = newMaxSeconds,
+                currentMillis = newMaxSeconds * 1000L,
+                startTime = 0L,
+                pausedTime = 0L
+            )
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        countdownJob?.cancel()
+    }
+}
+
+/**
+ * UI状态数据类
+ */
+data class CountdownUiState(
+    val totalSeconds: Int = 60,
+    val currentSeconds: Int = 60,
+    val currentMillis: Long = 60000L,
+    val isRunning: Boolean = false,
+    val progress: Float = 1f,
+    val formattedTime: String = "01:00",
+    val formattedTotalTime: String = "01:00"
+) 
