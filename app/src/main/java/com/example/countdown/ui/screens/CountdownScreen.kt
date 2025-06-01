@@ -1,5 +1,9 @@
 package com.example.countdown.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,7 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.countdown.ui.components.CountdownProgress
-import com.example.countdown.ui.components.TimeSettingDialog
+import com.example.countdown.ui.components.TimePicker
 import com.example.countdown.utils.TimeUtils
 import com.example.countdown.viewmodel.CountdownViewModel
 
@@ -34,7 +38,7 @@ fun CountdownScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    var showTimeSettingDialog by remember { mutableStateOf(false) }
+    var isSettingTime by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -52,11 +56,33 @@ fun CountdownScreen(
             modifier = Modifier.padding(bottom = 48.dp)
         )
 
-        // 倒计时进度条
-        CountdownProgress(
-            progress = uiState.progress,
-            formattedTime = uiState.formattedTime
-        )
+        // 倒计时进度条或时间选择器
+        AnimatedVisibility(
+            visible = !isSettingTime,
+            enter = fadeIn(animationSpec = tween(300)),
+            exit = fadeOut(animationSpec = tween(300))
+        ) {
+            CountdownProgress(
+                progress = uiState.progress,
+                formattedTime = uiState.formattedTime
+            )
+        }
+
+        AnimatedVisibility(
+            visible = isSettingTime,
+            enter = fadeIn(animationSpec = tween(300)),
+            exit = fadeOut(animationSpec = tween(300))
+        ) {
+            val (hours, minutes, seconds) = TimeUtils.fromTotalSeconds(uiState.totalSeconds)
+            TimePicker(
+                initialHours = hours,
+                initialMinutes = minutes,
+                initialSeconds = seconds,
+                onTimeChanged = { h, m, s ->
+                    viewModel.setNewTotalTime(h, m, s)
+                }
+            )
+        }
 
         Spacer(modifier = Modifier.height(48.dp))
 
@@ -69,7 +95,7 @@ fun CountdownScreen(
             Button(
                 onClick = { viewModel.toggleCountdown() },
                 modifier = Modifier.weight(1f),
-                enabled = uiState.currentMillis > 0
+                enabled = uiState.currentMillis > 0 && !isSettingTime
             ) {
                 Text(if (uiState.isRunning) "暂停" else "开始")
             }
@@ -78,7 +104,7 @@ fun CountdownScreen(
             Button(
                 onClick = { viewModel.setCurrentAsMax() },
                 modifier = Modifier.weight(1f),
-                enabled = uiState.isRunning && uiState.currentMillis > 0
+                enabled = uiState.isRunning && uiState.currentMillis > 0 && !isSettingTime
             ) {
                 Text("剩余倒计时")
             }
@@ -92,16 +118,20 @@ fun CountdownScreen(
         ) {
             // 设置时间按钮
             OutlinedButton(
-                onClick = { showTimeSettingDialog = true },
+                onClick = { isSettingTime = !isSettingTime },
                 modifier = Modifier.weight(1f)
             ) {
-                Text("设置时间")
+                Text(if (isSettingTime) "完成" else "设置时间")
             }
 
             // 重置按钮
             OutlinedButton(
-                onClick = { viewModel.resetCountdown() },
-                modifier = Modifier.weight(1f)
+                onClick = { 
+                    viewModel.resetCountdown()
+                    isSettingTime = false
+                },
+                modifier = Modifier.weight(1f),
+                enabled = !isSettingTime
             ) {
                 Text("重置")
             }
@@ -110,23 +140,12 @@ fun CountdownScreen(
         Spacer(modifier = Modifier.height(24.dp))
 
         // 显示总时间
-        Text(
-            text = "总时间: ${uiState.formattedTotalTime}",
-            fontSize = 16.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-
-    // 时间设置对话框
-    if (showTimeSettingDialog) {
-        val (minutes, seconds) = TimeUtils.fromTotalSeconds(uiState.totalSeconds)
-        TimeSettingDialog(
-            initialMinutes = minutes,
-            initialSeconds = seconds,
-            onDismiss = { showTimeSettingDialog = false },
-            onConfirm = { newMinutes, newSeconds ->
-                viewModel.setNewTotalTime(newMinutes, newSeconds)
-            }
-        )
+        if (!isSettingTime) {
+            Text(
+                text = "总时间: ${uiState.formattedTotalTime}",
+                fontSize = 16.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 } 

@@ -151,8 +151,8 @@ class CountdownViewModel(private val repository: CountdownRepository) : ViewMode
     /**
      * 设置新的总时间
      */
-    fun setNewTotalTime(minutes: Int, seconds: Int) {
-        val newTotalSeconds = TimeUtils.toTotalSeconds(minutes, seconds)
+    fun setNewTotalTime(hours: Int, minutes: Int, seconds: Int) {
+        val newTotalSeconds = TimeUtils.toTotalSeconds(hours, minutes, seconds)
         if (newTotalSeconds <= 0) return
 
         countdownJob?.cancel()
