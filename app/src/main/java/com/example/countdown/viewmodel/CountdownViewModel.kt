@@ -63,7 +63,7 @@ class CountdownViewModel(private val repository: CountdownRepository) : ViewMode
                 isRunning = state.isRunning,
                 progress = progress,
                 formattedTime = TimeUtils.formatTime(currentSeconds),
-                formattedTotalTime = TimeUtils.formatTime(state.totalSeconds)
+                formattedTotalTime = TimeUtils.formatTime(state.todayCompletedSeconds)
             )
         }
     }
@@ -117,6 +117,7 @@ class CountdownViewModel(private val repository: CountdownRepository) : ViewMode
                 val remaining = state.totalSeconds * 1000L - elapsed
 
                 if (remaining <= 0) {
+                    repository.addCompletedTime(state.totalSeconds)
                     repository.updateState { it.copy(
                         currentMillis = 0L,
                         isRunning = false,
@@ -201,5 +202,5 @@ data class CountdownUiState(
     val isRunning: Boolean = false,
     val progress: Float = 1f,
     val formattedTime: String = "01:00",
-    val formattedTotalTime: String = "01:00"
+    val formattedTotalTime: String = "00:00"
 ) 

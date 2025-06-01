@@ -139,10 +139,10 @@ fun CountdownScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // 显示总时间
+        // 显示今日累计倒计时时长
         if (!isSettingTime) {
             Text(
-                text = "总时间: ${uiState.formattedTotalTime}",
+                text = "今日累计: ${uiState.formattedTotalTime}",
                 fontSize = 16.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

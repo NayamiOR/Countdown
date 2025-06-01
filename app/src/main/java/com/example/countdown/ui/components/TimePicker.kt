@@ -26,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.weight
 
 @Composable
 fun TimePicker(
@@ -94,7 +95,7 @@ private fun TimePickerColumn(
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        //modifier = Modifier.weight(1f)
+        modifier = Modifier.weight(1f)
     ) {
         Button(onClick = onIncrease, modifier = Modifier.size(36.dp)) {
             Text("▲", fontSize = 16.sp)
