@@ -38,7 +38,6 @@ fun CountdownScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    var isSettingTime by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -58,7 +57,7 @@ fun CountdownScreen(
 
         // 倒计时进度条或时间选择器
         AnimatedVisibility(
-            visible = !isSettingTime,
+            visible = !uiState.shouldShowTimePicker,
             enter = fadeIn(animationSpec = tween(300)),
             exit = fadeOut(animationSpec = tween(300))
         ) {
@@ -69,7 +68,7 @@ fun CountdownScreen(
         }
 
         AnimatedVisibility(
-            visible = isSettingTime,
+            visible = uiState.shouldShowTimePicker,
             enter = fadeIn(animationSpec = tween(300)),
             exit = fadeOut(animationSpec = tween(300))
         ) {
@@ -91,47 +90,36 @@ fun CountdownScreen(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            // 开始/暂停按钮
+            // 开始/暂停按钮（在所有界面都显示）
             Button(
                 onClick = { viewModel.toggleCountdown() },
                 modifier = Modifier.weight(1f),
-                enabled = uiState.currentMillis > 0 && !isSettingTime
+                enabled = uiState.currentMillis > 0
             ) {
                 Text(if (uiState.isRunning) "暂停" else "开始")
             }
 
-            // 设为最大时间按钮
-            Button(
-                onClick = { viewModel.setCurrentAsMax() },
-                modifier = Modifier.weight(1f),
-                enabled = uiState.isRunning && uiState.currentMillis > 0 && !isSettingTime
-            ) {
-                Text("剩余倒计时")
+            // 设为最大时间按钮（只在倒计时界面显示）
+            if (!uiState.shouldShowTimePicker) {
+                Button(
+                    onClick = { viewModel.setCurrentAsMax() },
+                    modifier = Modifier.weight(1f),
+                    enabled = uiState.isRunning && uiState.currentMillis > 0
+                ) {
+                    Text("剩余倒计时")
+                }
             }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            // 设置时间按钮
-            OutlinedButton(
-                onClick = { isSettingTime = !isSettingTime },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(if (isSettingTime) "完成" else "设置时间")
-            }
-
-            // 重置按钮
+        // 重置按钮（只在倒计时界面显示）
+        if (!uiState.shouldShowTimePicker) {
             OutlinedButton(
                 onClick = { 
                     viewModel.resetCountdown()
-                    isSettingTime = false
                 },
-                modifier = Modifier.weight(1f),
-                enabled = !isSettingTime
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Text("重置")
             }
@@ -140,7 +128,7 @@ fun CountdownScreen(
         Spacer(modifier = Modifier.height(24.dp))
 
         // 显示今日累计倒计时时长
-        if (!isSettingTime) {
+        if (!uiState.shouldShowTimePicker) {
             Text(
                 text = "今日累计: ${uiState.formattedTotalTime}",
                 fontSize = 16.sp,
