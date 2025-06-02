@@ -1,6 +1,5 @@
 package com.example.countdown.viewmodel
 
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -18,7 +17,8 @@ import kotlinx.coroutines.launch
 /**
  * ViewModel工厂类
  */
-class CountdownViewModelFactory(private val repository: CountdownRepository) : ViewModelProvider.Factory {
+class CountdownViewModelFactory(private val repository: CountdownRepository) :
+    ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(CountdownViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
@@ -55,6 +55,26 @@ class CountdownViewModel(private val repository: CountdownRepository) : ViewMode
         val totalMillis = state.totalSeconds * 1000L
         val progress = TimeUtils.calculateProgress(state.currentMillis, totalMillis)
 
+        // 计算今日实时累计时间：已完成的时间 + 当前正在进行的倒计时时间
+        val currentElapsedSeconds = if (state.isRunning || state.pausedTime > 0) {
+            // 如果正在运行或者暂停中，计算已经消耗的时间
+            val totalMillisForCurrentSession = state.totalSeconds * 1000L
+            val elapsedInCurrentSession =
+                ((totalMillisForCurrentSession - state.currentMillis) / 1000).toInt()
+            state.todayCompletedSeconds + elapsedInCurrentSession
+        } else {
+            // 如果没有运行，只显示已完成的时间
+            state.todayCompletedSeconds
+        }
+
+        // 决定是否显示时间选择界面
+        val shouldShowTimePicker = when {
+            state.isRunning -> false  // 正在运行时显示计时界面
+            state.pausedTime > 0 -> false  // 暂停时也显示计时界面
+            state.currentMillis <= 0 -> true  // 倒计时结束时显示时间选择界面
+            else -> true  // 其他情况（如重置后）显示时间选择界面
+        }
+
         _uiState.update { currentState ->
             currentState.copy(
                 totalSeconds = state.totalSeconds,
@@ -63,7 +83,8 @@ class CountdownViewModel(private val repository: CountdownRepository) : ViewMode
                 isRunning = state.isRunning,
                 progress = progress,
                 formattedTime = TimeUtils.formatTime(currentSeconds),
-                formattedTotalTime = TimeUtils.formatTime(state.todayCompletedSeconds)
+                formattedTotalTime = TimeUtils.formatTime(currentElapsedSeconds),
+                shouldShowTimePicker = shouldShowTimePicker
             )
         }
     }
@@ -76,7 +97,14 @@ class CountdownViewModel(private val repository: CountdownRepository) : ViewMode
         if (currentState.currentMillis <= 0) return
 
         if (currentState.isRunning) {
-            // 暂停
+            // 暂停时，将已进行的时间添加到今日累计中
+            val totalMillisForCurrentSession = currentState.totalSeconds * 1000L
+            val elapsedInCurrentSession = ((totalMillisForCurrentSession - currentState.currentMillis) / 1000).toInt()
+            
+            if (elapsedInCurrentSession > 0) {
+                repository.addCompletedTime(elapsedInCurrentSession)
+            }
+            
             repository.updateState { state ->
                 state.copy(
                     isRunning = false,
@@ -103,11 +131,12 @@ class CountdownViewModel(private val repository: CountdownRepository) : ViewMode
     private fun startCountdown() {
         countdownJob?.cancel()
         countdownJob = viewModelScope.launch {
-            while (repository.countdownState.value.isRunning && 
-                   repository.countdownState.value.currentMillis > 0) {
+            while (repository.countdownState.value.isRunning &&
+                repository.countdownState.value.currentMillis > 0
+            ) {
                 val currentTime = System.currentTimeMillis()
                 val state = repository.countdownState.value
-                
+
                 if (state.startTime == 0L) {
                     repository.updateState { it.copy(startTime = currentTime - it.pausedTime) }
                     continue
@@ -117,13 +146,21 @@ class CountdownViewModel(private val repository: CountdownRepository) : ViewMode
                 val remaining = state.totalSeconds * 1000L - elapsed
 
                 if (remaining <= 0) {
-                    repository.addCompletedTime(state.totalSeconds)
-                    repository.updateState { it.copy(
-                        currentMillis = 0L,
-                        isRunning = false,
-                        startTime = 0L,
-                        pausedTime = 0L
-                    )}
+                    // 倒计时结束，保存剩余的最后一点时间
+                    val finalElapsed =
+                        ((state.totalSeconds * 1000L - state.currentMillis) / 1000).toInt()
+                    if (finalElapsed > 0) {
+                        repository.addCompletedTime(finalElapsed)
+                    }
+
+                    repository.updateState {
+                        it.copy(
+                            currentMillis = 0L,
+                            isRunning = false,
+                            startTime = 0L,
+                            pausedTime = 0L
+                        )
+                    }
                     break
                 } else {
                     repository.updateState { it.copy(currentMillis = remaining) }
@@ -139,6 +176,20 @@ class CountdownViewModel(private val repository: CountdownRepository) : ViewMode
      */
     fun resetCountdown() {
         countdownJob?.cancel()
+
+        val currentState = repository.countdownState.value
+
+        // 如果有已进行的倒计时时间，先保存到今日累计中
+        if (currentState.isRunning || currentState.pausedTime > 0) {
+            val totalMillisForCurrentSession = currentState.totalSeconds * 1000L
+            val elapsedInCurrentSession =
+                ((totalMillisForCurrentSession - currentState.currentMillis) / 1000).toInt()
+
+            if (elapsedInCurrentSession > 0) {
+                repository.addCompletedTime(elapsedInCurrentSession)
+            }
+        }
+
         repository.updateState { state ->
             state.copy(
                 currentMillis = state.totalSeconds * 1000L,
@@ -157,6 +208,20 @@ class CountdownViewModel(private val repository: CountdownRepository) : ViewMode
         if (newTotalSeconds <= 0) return
 
         countdownJob?.cancel()
+
+        val currentState = repository.countdownState.value
+
+        // 如果有已进行的倒计时时间，先保存到今日累计中
+        if (currentState.isRunning || currentState.pausedTime > 0) {
+            val totalMillisForCurrentSession = currentState.totalSeconds * 1000L
+            val elapsedInCurrentSession =
+                ((totalMillisForCurrentSession - currentState.currentMillis) / 1000).toInt()
+
+            if (elapsedInCurrentSession > 0) {
+                repository.addCompletedTime(elapsedInCurrentSession)
+            }
+        }
+
         repository.updateState { state ->
             state.copy(
                 totalSeconds = newTotalSeconds,
@@ -202,5 +267,6 @@ data class CountdownUiState(
     val isRunning: Boolean = false,
     val progress: Float = 1f,
     val formattedTime: String = "01:00",
-    val formattedTotalTime: String = "00:00"
+    val formattedTotalTime: String = "00:00",
+    val shouldShowTimePicker: Boolean = true // 是否显示时间选择界面
 ) 
