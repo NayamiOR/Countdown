@@ -28,6 +28,9 @@ class CountdownRepository(context: Context) {
         private const val KEY_PAUSED_TIME = "paused_time"
         private const val KEY_TODAY_COMPLETED_SECONDS = "today_completed_seconds"
         private const val KEY_LAST_DATE = "last_date"
+        private const val KEY_LAST_CLEAR_TIME = "last_clear_time"
+        private const val KEY_TODAY_TIME_OFFSET = "today_time_offset"
+        private const val KEY_AUTO_PAUSED = "auto_paused"
     }
 
     /**
@@ -41,6 +44,9 @@ class CountdownRepository(context: Context) {
         val pausedTime = prefs.getLong(KEY_PAUSED_TIME, 0L)
         val todayCompletedSeconds = prefs.getInt(KEY_TODAY_COMPLETED_SECONDS, 0)
         val lastDate = prefs.getString(KEY_LAST_DATE, "") ?: ""
+        val lastClearTime = prefs.getLong(KEY_LAST_CLEAR_TIME, 0L)
+        val todayTimeOffset = prefs.getInt(KEY_TODAY_TIME_OFFSET, 0)
+        val autoPaused = prefs.getBoolean(KEY_AUTO_PAUSED, false)
 
         val currentDate = getCurrentDate()
         
@@ -60,7 +66,10 @@ class CountdownRepository(context: Context) {
             startTime, 
             pausedTime,
             finalTodayCompletedSeconds,
-            currentDate
+            currentDate,
+            lastClearTime,
+            todayTimeOffset,
+            autoPaused
         )
     }
 
@@ -76,6 +85,9 @@ class CountdownRepository(context: Context) {
             putLong(KEY_PAUSED_TIME, state.pausedTime)
             putInt(KEY_TODAY_COMPLETED_SECONDS, state.todayCompletedSeconds)
             putString(KEY_LAST_DATE, state.lastDate)
+            putLong(KEY_LAST_CLEAR_TIME, state.lastClearTime)
+            putInt(KEY_TODAY_TIME_OFFSET, state.todayTimeOffset)
+            putBoolean(KEY_AUTO_PAUSED, state.autoPaused)
             apply()
         }
         _countdownState.value = state
@@ -107,5 +119,35 @@ class CountdownRepository(context: Context) {
      */
     private fun getCurrentDate(): String {
         return SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+    }
+
+    /**
+     * 清零今日累计时长
+     */
+    fun clearTodayCompletedTime() {
+        val oldState = _countdownState.value
+        Log.d("CountdownRepository", "Before clear - todayCompletedSeconds: ${oldState.todayCompletedSeconds}")
+        
+        // 计算当前实际累计的总时间（包括正在进行的）
+        val currentTotalElapsed = if (oldState.isRunning || oldState.pausedTime > 0) {
+            val totalMillisForCurrentSession = oldState.totalSeconds * 1000L
+            val elapsedInCurrentSession = ((totalMillisForCurrentSession - oldState.currentMillis) / 1000).toInt()
+            oldState.todayCompletedSeconds + elapsedInCurrentSession
+        } else {
+            oldState.todayCompletedSeconds
+        }
+        
+        updateState { state ->
+            state.copy(
+                lastDate = getCurrentDate(),
+                lastClearTime = System.currentTimeMillis(),
+                // 设置偏移量，使当前累计时间在UI显示为0
+                todayTimeOffset = currentTotalElapsed
+            )
+        }
+        
+        val newState = _countdownState.value
+        Log.d("CountdownRepository", "After clear - set offset to: ${newState.todayTimeOffset}")
+        Log.d("CountdownRepository", "Cleared today's completed time at ${newState.lastClearTime}")
     }
 } 

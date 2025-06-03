@@ -61,10 +61,24 @@ class CountdownViewModel(private val repository: CountdownRepository) : ViewMode
             val totalMillisForCurrentSession = state.totalSeconds * 1000L
             val elapsedInCurrentSession =
                 ((totalMillisForCurrentSession - state.currentMillis) / 1000).toInt()
-            state.todayCompletedSeconds + elapsedInCurrentSession
+            
+            // 总累计时间 = 已完成时间 + 当前进行时间 - 偏移量
+            val totalElapsed = state.todayCompletedSeconds + elapsedInCurrentSession - state.todayTimeOffset
+            
+            android.util.Log.d("CountdownViewModel", 
+                "updateUiState: todayCompleted=${state.todayCompletedSeconds}, " +
+                "elapsedInSession=$elapsedInCurrentSession, " +
+                "offset=${state.todayTimeOffset}, " +
+                "totalElapsed=$totalElapsed")
+            
+            kotlin.math.max(0, totalElapsed) // 确保不小于0
         } else {
-            // 如果没有运行，只显示已完成的时间
-            state.todayCompletedSeconds
+            // 如果没有运行，只显示已完成的时间减去偏移量
+            val totalElapsed = state.todayCompletedSeconds - state.todayTimeOffset
+            android.util.Log.d("CountdownViewModel", 
+                "updateUiState: not running, todayCompleted=${state.todayCompletedSeconds}, " +
+                "offset=${state.todayTimeOffset}, totalElapsed=$totalElapsed")
+            kotlin.math.max(0, totalElapsed) // 确保不小于0
         }
 
         // 决定是否显示时间选择界面
@@ -84,7 +98,8 @@ class CountdownViewModel(private val repository: CountdownRepository) : ViewMode
                 progress = progress,
                 formattedTime = TimeUtils.formatTime(currentSeconds),
                 formattedTotalTime = TimeUtils.formatTime(currentElapsedSeconds),
-                shouldShowTimePicker = shouldShowTimePicker
+                shouldShowTimePicker = shouldShowTimePicker,
+                wasAutoPaused = state.autoPaused
             )
         }
     }
@@ -104,7 +119,8 @@ class CountdownViewModel(private val repository: CountdownRepository) : ViewMode
                 state.copy(
                     isRunning = false,
                     pausedTime = state.totalSeconds * 1000L - state.currentMillis,
-                    startTime = 0L
+                    startTime = 0L,
+                    autoPaused = false // 手动暂停，清除自动暂停标志
                 )
             }
             countdownJob?.cancel()
@@ -113,7 +129,8 @@ class CountdownViewModel(private val repository: CountdownRepository) : ViewMode
             repository.updateState { state ->
                 state.copy(
                     isRunning = true,
-                    startTime = 0L
+                    startTime = 0L,
+                    autoPaused = false // 手动开始，清除自动暂停标志
                 )
             }
             startCountdown()
@@ -246,6 +263,33 @@ class CountdownViewModel(private val repository: CountdownRepository) : ViewMode
         }
     }
 
+    /**
+     * 清零今日累计时长
+     */
+    fun clearTodayTotal() {
+        // 只清零累计时长，不影响当前倒计时状态
+        repository.clearTodayCompletedTime()
+    }
+
+    /**
+     * 保存当前状态
+     */
+    fun saveCurrentState() {
+        val currentState = repository.countdownState.value
+        // 如果有正在进行的倒计时，先计算并保存已完成的时间
+        if (currentState.isRunning && currentState.startTime > 0) {
+            val elapsed = System.currentTimeMillis() - currentState.startTime
+            val remaining = currentState.totalSeconds * 1000L - elapsed
+            
+            if (remaining > 0) {
+                repository.updateState { state ->
+                    state.copy(currentMillis = remaining)
+                }
+            }
+        }
+        android.util.Log.d("CountdownViewModel", "Current state saved")
+    }
+
     override fun onCleared() {
         super.onCleared()
         countdownJob?.cancel()
@@ -263,5 +307,6 @@ data class CountdownUiState(
     val progress: Float = 1f,
     val formattedTime: String = "01:00",
     val formattedTotalTime: String = "00:00",
-    val shouldShowTimePicker: Boolean = true // 是否显示时间选择界面
+    val shouldShowTimePicker: Boolean = true, // 是否显示时间选择界面
+    val wasAutoPaused: Boolean = false // 是否因应用后台而被自动暂停
 ) 

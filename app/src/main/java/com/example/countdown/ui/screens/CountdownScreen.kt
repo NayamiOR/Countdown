@@ -16,6 +16,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.countdown.ui.components.ConfirmDialog
 import com.example.countdown.ui.components.CountdownProgress
 import com.example.countdown.ui.components.TimePicker
 import com.example.countdown.utils.TimeUtils
@@ -38,6 +40,7 @@ fun CountdownScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var showClearConfirmDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -129,11 +132,54 @@ fun CountdownScreen(
 
         // 显示今日累计倒计时时长
         if (!uiState.shouldShowTimePicker) {
-            Text(
-                text = "今日累计: ${uiState.formattedTotalTime}",
-                fontSize = 16.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // 自动暂停提示
+                if (uiState.wasAutoPaused) {
+                    Text(
+                        text = "⚠️ 倒计时已自动暂停（应用进入后台）",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                }
+                
+                Text(
+                    text = "今日累计: ${uiState.formattedTotalTime}",
+                    fontSize = 16.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                TextButton(
+                    onClick = { showClearConfirmDialog = true }
+                ) {
+                    Text(
+                        text = "清零今日累计",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
         }
+    }
+
+    // 确认弹窗
+    if (showClearConfirmDialog) {
+        ConfirmDialog(
+            title = "清零确认",
+            message = "确定要清零今日累计倒计时时长吗？此操作不可撤销。",
+            onConfirm = {
+                viewModel.clearTodayTotal()
+                showClearConfirmDialog = false
+            },
+            onDismiss = {
+                showClearConfirmDialog = false
+            },
+            confirmButtonText = "清零",
+            dismissButtonText = "取消"
+        )
     }
 } 
